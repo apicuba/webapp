@@ -1,0 +1,243 @@
+// Prisma schema for Cuban Traffic Law 109 Study Platform
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  USER
+}
+
+enum QuestionDifficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum LicenseStatus {
+  ACTIVE
+  USED
+  EXPIRED
+  REVOKED
+}
+
+enum ExamStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  firstName String
+  lastName  String
+  role      UserRole @default(USER)
+  isActive  Boolean  @default(false)
+  
+  // License activation
+  licenseId String?   @unique
+  license   License?  @relation(fields: [licenseId], references: [id])
+  
+  // Study progress
+  studyProgress   StudyProgress[]
+  examAttempts    ExamAttempt[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@map("users")
+}
+
+model License {
+  id          String        @id @default(cuid())
+  code        String        @unique // UUID for activation
+  status      LicenseStatus @default(ACTIVE)
+  
+  user        User?
+  
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  expiresAt   DateTime?
+  
+  @@map("licenses")
+}
+
+// Law content structure
+model LawSection {
+  id          String    @id @default(cuid())
+  title       String
+  description String?
+  orderIndex  Int
+  
+  chapters    Chapter[]
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  @@map("law_sections")
+}
+
+model Chapter {
+  id            String     @id @default(cuid())
+  title         String
+  description   String?
+  orderIndex    Int
+  
+  sectionId     String
+  section       LawSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  
+  articles      Article[]
+  
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  
+  @@map("chapters")
+}
+
+model Article {
+  id          String    @id @default(cuid())
+  title       String
+  content     String    @db.Text
+  orderIndex  Int
+  
+  chapterId   String
+  chapter     Chapter   @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  
+  questions   Question[]
+  studyProgress StudyProgress[]
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  @@map("articles")
+}
+
+// Question bank for exams
+model Question {
+  id            String             @id @default(cuid())
+  questionText  String             @db.Text
+  explanation   String?            @db.Text
+  difficulty    QuestionDifficulty @default(MEDIUM)
+  isActive      Boolean            @default(true)
+  
+  articleId     String
+  article       Article            @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  
+  options       QuestionOption[]
+  examAnswers   ExamAnswer[]
+  
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  
+  @@map("questions")
+}
+
+model QuestionOption {
+  id           String   @id @default(cuid())
+  text         String
+  isCorrect    Boolean  @default(false)
+  orderIndex   Int
+  
+  questionId   String
+  question     Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  
+  examAnswers  ExamAnswer[]
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  @@map("question_options")
+}
+
+// Study tracking
+model StudyProgress {
+  id          String   @id @default(cuid())
+  isStudied   Boolean  @default(false)
+  studiedAt   DateTime?
+  
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  articleId   String
+  article     Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@unique([userId, articleId])
+  @@map("study_progress")
+}
+
+// Exam system
+model ExamAttempt {
+  id            String      @id @default(cuid())
+  status        ExamStatus  @default(IN_PROGRESS)
+  score         Int?        // Out of 100
+  totalQuestions Int
+  correctAnswers Int        @default(0)
+  timeSpentMinutes Int?
+  
+  userId        String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  answers       ExamAnswer[]
+  
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  completedAt   DateTime?
+  
+  @@map("exam_attempts")
+}
+
+model ExamAnswer {
+  id              String  @id @default(cuid())
+  isCorrect       Boolean @default(false)
+  
+  examAttemptId   String
+  examAttempt     ExamAttempt @relation(fields: [examAttemptId], references: [id], onDelete: Cascade)
+  
+  questionId      String
+  question        Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  
+  selectedOptionId String?
+  selectedOption   QuestionOption? @relation(fields: [selectedOptionId], references: [id])
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@unique([examAttemptId, questionId])
+  @@map("exam_answers")
+}
+
+// White-label customization
+model BrandingSettings {
+  id                String   @id @default("main")
+  
+  // Visual branding
+  logoUrl           String?
+  faviconUrl        String?
+  primaryColor      String   @default("#2563eb")
+  secondaryColor    String   @default("#64748b")
+  
+  // Legal texts
+  termsOfService    String?  @db.Text
+  privacyPolicy     String?  @db.Text
+  
+  // Copy texts
+  homePageTitle     String   @default("Plataforma de Estudio - Ley de Tránsito 109")
+  homePageSubtitle  String   @default("Estudia y practica la Ley de Tránsito de Cuba")
+  welcomeMessage    String   @default("¡Bienvenido a tu plataforma de estudio!")
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@map("branding_settings")
+}
